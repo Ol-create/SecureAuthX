@@ -5,6 +5,8 @@ import {
   generateRefreshToken,
 } from "../services/token.service.js";
 
+import { hashToken } from "../utils/tokenHash.util.js";
+
 export async function register(req, res) {
   const { email, password } = req.body;
   const hashed = await hashPassword(password);
@@ -15,7 +17,7 @@ export async function register(req, res) {
 
 export async function login(req, res) {
   const { email, password } = req.body;
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email }).select("+refreshToken");
 
   if (!user || !(await verifyPassword(password, user.password))) {
     return res.status(401).json({ message: "Invalid credentials" });
@@ -24,12 +26,13 @@ export async function login(req, res) {
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
 
-  user.refreshToken = refreshToken;
+  user.refreshToken = hashToken(refreshToken);
   await user.save();
 
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
     secure: true,
+    sameSite: "strict",
   });
 
   res.json({ accessToken });
