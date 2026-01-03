@@ -23,6 +23,32 @@ export async function login(req, res) {
     return res.status(401).json({ message: "Invalid credentials" });
   }
 
+  // 🚫 Account locked
+  if (user.isLocked) {
+    return res.status(423).json({
+      message: "Account temporarily locked. Try again later.",
+    });
+  }
+
+  const validPassword = await verifyPassword(password, user.password);
+
+  if (!validPassword) {
+    user.failedLoginAttempts += 1;
+
+    if (user.failedLoginAttempts >= securityConfig.MAX_LOGIN_ATTEMPTS) {
+      user.lockUntil = new Date(Date.now() + securityConfig.LOCK_TIME_MS);
+      user.failedLoginAttempts = 0; // reset counter
+    }
+
+    await user.save();
+
+    return res.status(401).json({ message: "Invalid credentials" });
+  }
+
+  // ✅ Successful login → reset counters
+  user.failedLoginAttempts = 0;
+  user.lockUntil = null;
+
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
 
