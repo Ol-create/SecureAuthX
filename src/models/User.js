@@ -13,8 +13,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       select: false,
     },
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lockUntil: {
+      type: Date,
+    },
   },
   { timestamps: true }
 );
+
+userSchema.virtual("isLocked").get(function () {
+  return this.lockUntil && this.lockUntil > Date.now();
+});
 
 export default mongoose.model("User", userSchema);
