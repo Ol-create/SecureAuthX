@@ -13,3 +13,11 @@ export async function logout(req, res) {
   res.clearCookie("refreshToken");
   res.sendStatus(204);
 }
+
+
+export async function logoutAll(req, res) {
+  await Session.updateMany({ user: req.user.id }, { isValid: false });
+
+  res.clearCookie("refreshToken");
+  res.sendStatus(204);
+}
