@@ -6,6 +6,7 @@ import helmet from "helmet";
 import authRoutes from "./routes/auth.routes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { securityMiddleware } from "./middleware/security.js";
+import sessionRoutes from "./routes/session.routes.js";
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use(helmet());
 securityMiddleware(app);
 
 app.use("/auth", authRoutes);
+app.use("/sessions", sessionRoutes);
 
 app.use(errorHandler);
 
