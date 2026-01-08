@@ -44,3 +44,22 @@ export async function logoutAll(req, res) {
   res.clearCookie("refreshToken");
   res.sendStatus(204);
 }
+
+export async function logoutAllSessions(req, res) {
+  await Session.updateMany(
+    {
+      user: req.user.id,
+      isValid: true,
+    },
+    {
+      $set: { isValid: false },
+    }
+  );
+
+  // Clear refresh token for current device
+  res.clearCookie("refreshToken");
+
+  res.json({
+    message: "Logged out from all devices successfully",
+  });
+}
