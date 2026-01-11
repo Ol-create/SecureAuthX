@@ -1,5 +1,6 @@
 import Session from "../models/Session.js";
 import { hashToken } from "../utils/tokenHash.util.js";
+import { sendSecurityAlert } from "../services/securityAlert.service.js";
 
 export async function listSessions(req, res) {
   const sessions = await Session.find({
@@ -29,7 +30,10 @@ export async function logout(req, res) {
   if (!token) return res.sendStatus(204);
 
   await Session.findOneAndUpdate(
-    { refreshTokenHash: hashToken(token) },
+    {
+      refreshTokenHash: hashToken(token),
+      user: req.user.id,
+    },
     { isValid: false }
   );
 
@@ -37,26 +41,19 @@ export async function logout(req, res) {
   res.sendStatus(204);
 }
 
-
-export async function logoutAll(req, res) {
-  await Session.updateMany({ user: req.user.id }, { isValid: false });
-
-  res.clearCookie("refreshToken");
-  res.sendStatus(204);
-}
-
 export async function logoutAllSessions(req, res) {
   await Session.updateMany(
-    {
-      user: req.user.id,
-      isValid: true,
-    },
-    {
-      $set: { isValid: false },
-    }
+    { user: req.user.id, isValid: true },
+    { $set: { isValid: false } }
   );
 
-  // Clear refresh token for current device
+  await sendSecurityAlert({
+    user: req.user,
+    type: "LOGOUT_ALL",
+    ipAddress: req.ip,
+    device: req.headers["user-agent"],
+  });
+
   res.clearCookie("refreshToken");
 
   res.json({
