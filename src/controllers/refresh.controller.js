@@ -6,24 +6,22 @@ import {
 } from "../services/token.service.js";
 import { hashToken } from "../utils/tokenHash.util.js";
 import { parseDevice } from "../utils/device.util.js";
+import { sendSecurityAlert } from "../services/securityAlert.service.js";
 
 export async function refreshToken(req, res) {
   const token = req.cookies.refreshToken;
   if (!token) return res.sendStatus(401);
 
   try {
-    // Verify refresh token signature
     const payload = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
-
     const tokenHash = hashToken(token);
 
-    // Find valid session
     const session = await Session.findOne({
       refreshTokenHash: tokenHash,
       isValid: true,
-    });
+    }).populate("user");
 
-    // Token reuse / stolen token
+    // 🚨 Token reuse / stolen token
     if (!session) {
       return res.sendStatus(403);
     }
@@ -32,32 +30,37 @@ export async function refreshToken(req, res) {
     const currentUA = req.headers["user-agent"];
     const currentDevice = parseDevice(currentUA);
 
-    // Device mismatch → invalidate session
+    // 🚫 Device mismatch → invalidate session
     if (session.device !== currentDevice) {
       session.isValid = false;
       await session.save();
+
+      await sendSecurityAlert({
+        user: session.user,
+        type: "TOKEN_ANOMALY",
+        ipAddress: currentIP,
+        device: currentUA,
+      });
+
       return res.sendStatus(403);
     }
 
-    // IP change → allow but update
+    // 🧭 IP change → allowed but tracked
     if (session.ipAddress !== currentIP) {
       session.ipAddress = currentIP;
     }
 
-    // Rotate refresh token
+    // 🔁 Rotate refresh token
     const newRefreshToken = generateRefreshToken({
-      _id: payload.id,
+      _id: session.user._id,
     });
 
     session.refreshTokenHash = hashToken(newRefreshToken);
     session.lastUsedAt = new Date();
     await session.save();
 
-    // Issue new access token
-    const newAccessToken = generateAccessToken({
-      _id: payload.id,
-      role: payload.role,
-    });
+    // 🔐 Issue new access token (DB-backed role)
+    const newAccessToken = generateAccessToken(session.user);
 
     res.cookie("refreshToken", newRefreshToken, {
       httpOnly: true,
