@@ -1,29 +1,24 @@
-
 import User from "../models/User.js";
 import Session from "../models/Session.js";
 import { parseDevice } from "../utils/device.util.js";
-import { hashPassword, verifyPassword } from "../utils/password.util.js";
+import { verifyPassword } from "../utils/password.util.js";
 import {
   generateAccessToken,
   generateRefreshToken,
 } from "../services/token.service.js";
 import { hashToken } from "../utils/tokenHash.util.js";
 import { securityConfig } from "../config/security.js";
-
-export async function register(req, res) {
-  const { email, password } = req.body;
-  const hashed = await hashPassword(password);
-
-  await User.create({ email, password: hashed });
-  res.status(201).json({ message: "User registered" });
-}
+import { sendSecurityAlert } from "../services/securityAlert.service.js";
 
 export async function login(req, res) {
   const { email, password } = req.body;
+  const ipAddress = req.ip;
+  const userAgent = req.headers["user-agent"];
+  const device = parseDevice(userAgent);
 
-  const user = await User.findOne({ email }).select("+refreshToken");
+  const user = await User.findOne({ email });
 
-  // 🔒 Uniform response (prevents enumeration)
+  // 🔒 Uniform response
   if (!user) {
     return res.status(401).json({ message: "Invalid credentials" });
   }
@@ -53,21 +48,38 @@ export async function login(req, res) {
   // ✅ Successful login
   user.failedLoginAttempts = 0;
   user.lockUntil = null;
+  await user.save();
+
+  // 🔍 Detect new device BEFORE creating session
+  const existingSession = await Session.findOne({
+    user: user._id,
+    device,
+    isValid: true,
+  });
+
+  const isNewDevice = !existingSession;
 
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
-
-  user.refreshToken = hashToken(refreshToken);
-  await user.save();
 
   // 🧭 Create device-bound session
   await Session.create({
     user: user._id,
     refreshTokenHash: hashToken(refreshToken),
-    ipAddress: req.ip,
-    userAgent: req.headers["user-agent"],
-    device: parseDevice(req.headers["user-agent"]),
+    ipAddress,
+    userAgent,
+    device,
   });
+
+  // 🔔 Alert ONLY if device is new
+  if (isNewDevice) {
+    await sendSecurityAlert({
+      user,
+      type: "NEW_LOGIN",
+      ipAddress,
+      device,
+    });
+  }
 
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
@@ -77,4 +89,3 @@ export async function login(req, res) {
 
   res.json({ accessToken });
 }
-
