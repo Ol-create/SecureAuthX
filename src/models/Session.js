@@ -15,6 +15,10 @@ const sessionSchema = new mongoose.Schema(
     ipAddress: String,
     userAgent: String,
     device: String,
+    location: {
+      lat: Number,
+      lng: Number,
+    },
     isValid: {
       type: Boolean,
       default: true,
